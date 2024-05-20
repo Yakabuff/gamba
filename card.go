@@ -251,7 +251,6 @@ func shuffleDeck() []Card {
 			deck = append(deck, NewCard(1<<j, 1<<k))
 		}
 	}
-	fmt.Println(len(deck))
 	// Fisher Yates shuffle
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
@@ -262,5 +261,51 @@ func shuffleDeck() []Card {
 func dealCards(deck []Card) []Card {
 	var x []Card
 	x, deck = deck[0:12], deck[1:]
+	return x
+}
+
+func cardsToString(cards []Card) []string {
+	var x []string
+	for _, j := range cards {
+		suite := GetSuite(j)
+		var s string
+		if suite == Diamonds {
+			s = "♦"
+		} else if suite == Hearts {
+			s = "♥"
+		} else if suite == Clubs {
+			s = "♣"
+		} else if suite == Spades {
+			s = "♠"
+		}
+		rank := GetRank(j)
+		var r string
+		if rank == Three {
+			r = "3"
+		} else if rank == Four {
+			r = "4"
+		} else if rank == Five {
+			r = "5"
+		} else if rank == Six {
+			r = "6"
+		} else if rank == Seven {
+			r = "7"
+		} else if rank == Eight {
+			r = "8"
+		} else if rank == Nine {
+			r = "9"
+		} else if rank == Ten {
+			r = "10"
+		} else if rank == Jack {
+			r = "J"
+		} else if rank == Queen {
+			r = "Q"
+		} else if rank == King {
+			r = "K"
+		} else if rank == Ace {
+			r = "A"
+		}
+		x = append(x, s+r)
+	}
 	return x
 }
