@@ -23,18 +23,8 @@ type Hub struct {
 
 func newApp() App {
 	hub := newHub()
-	redis := initRedis()
-	// r, err := initRabbitMQ()
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
-	// err, msgs := r.consume()
-	// if err != nil {
-	// log.Panic(err)
-	// }
-	// return App{&hub, &r, msgs, redis, "asdf"}
 	gameInstances := make(map[string]*GameInstance)
-	return App{&hub, redis, "asdf", gameInstances}
+	return App{&hub, nil, "asdf", gameInstances}
 }
 
 // func (a App) listenPubsub() {
@@ -84,7 +74,7 @@ func (e App) notifyRoomMembers(g GameEvent) {
 	for _, j := range members {
 		fmt.Println("Notifying" + j)
 		client := e.Hub.clients[j]
-		fmt.Println(client)
+		fmt.Println(client.name)
 		client.events <- g
 		fmt.Println("finished notifying" + j)
 	}

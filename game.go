@@ -17,6 +17,10 @@ func (a App) spawnGameLoop(roomId string) {
 		timeout := time.After(10 * time.Second)
 		select {
 		case <-timeout:
+			if !gameInstance.gameStarted {
+				continue
+			}
+			log.Println("timeout!")
 			// timeout: skip current user's turn
 			// increment round num
 			// notify next user that it's their turn
@@ -39,7 +43,8 @@ func (a App) spawnGameLoop(roomId string) {
 				gameInstance.currentUserTurnIndex++
 			}
 			nextUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
-			skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber+1, gameInstance.lastPlayed)
+			cardsToString := cardsToString(gameInstance.lastPlayed)
+			skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber+1, gameInstance.lastPlayed, a.Hub.rooms[roomId], cardsToString)
 			a.notifyRoomMembers(skipMessage)
 		case msg := <-channel:
 			fmt.Println(msg)
@@ -51,13 +56,19 @@ func (a App) spawnGameLoop(roomId string) {
 				// notify room who's starting
 				fmt.Println("connect")
 				gameInstance.connect(msg.UserId)
-
-				a.notifyRoomMembers(msg)
+				usernames := a.getUsernamesRoom(roomId)
+				gameConnectEvent := newConnectEvent(msg.Username, roomId, "", usernames)
+				a.notifyRoomMembers(gameConnectEvent)
+				log.Println(gameInstance.playerCount)
 				if gameInstance.playerCount == 4 {
 					gameInstance.gameStarted = true
 					currUserTurn := gameInstance.findThreeOfDiamonds()
-					gameStartEvent := newGameStartEvent(msg.Username, "", msg.RoomId, currUserTurn, 1)
-					a.notifyRoomMembers(gameStartEvent)
+					currUserTurnName := a.Hub.clients[currUserTurn].name
+					for _, j := range a.Hub.rooms[roomId] {
+						cardsToString := cardsToString(gameInstance.playerHands[j])
+						gameStartEvent := newGameStartEvent("", j, msg.RoomId, currUserTurnName, 1, usernames, gameInstance.playerHands[j], cardsToString, gameInstance.currentUserTurnIndex)
+						a.notifyUser(gameStartEvent)
+					}
 				}
 
 			} else if msg.OperationType == DISCONNECT {
@@ -67,15 +78,22 @@ func (a App) spawnGameLoop(roomId string) {
 				fmt.Println("disconnect")
 				gameInstance.disconnect(msg.UserId)
 				a.disconnectRoomMember(msg)
-				disconnectEvent := newDisconnectEvent(msg.Username, msg.RoomId, "")
+				usernames := a.getUsernamesRoom(roomId)
+				disconnectEvent := newDisconnectEvent(msg.Username, msg.RoomId, "", usernames)
 				a.notifyRoomMembers(disconnectEvent)
-			} else if gameInstance.gameStarted && msg.OperationType == MOVE {
+			} else if gameInstance.gameStarted && msg.OperationType == ACTION {
 				fmt.Println("action")
 				removeCardsFromHand(gameInstance.playerHands[msg.UserId], msg.Cards)
 				gameInstance.lastPlayed = msg.Cards
 				a.notifyRoomMembers(msg)
+				cardsToString := cardsToString(gameInstance.playerHands[msg.UserId])
+				usernames := a.getUsernamesRoom(roomId)
+				updateHandEvent := newUpdateHandEvent(msg.Username, msg.UserId, roomId, gameInstance.playerHands[msg.UserId], usernames, cardsToString)
+				a.notifyUser(updateHandEvent)
 				if len(gameInstance.playerHands[msg.UserId]) == 0 {
-					gameInstance.gameStarted = false
+					gameFinishEvent := newGameFinishEvent(msg.Username, "", roomId, gameInstance.turnNumber, a.Hub.rooms[roomId], msg.Username)
+					a.notifyRoomMembers(gameFinishEvent)
+					gameInstance.resetGameInstance()
 				}
 			} else if gameInstance.gameStarted && msg.OperationType == SKIP {
 				// if skip, update last player
@@ -99,11 +117,11 @@ func (a App) spawnGameLoop(roomId string) {
 func (g *GameInstance) connect(user string) {
 	cards := dealCards(g.deck)
 	g.playerHands[user] = cards
-	g.playerCount++
+	g.playerCount = g.playerCount + 1
 }
 
 func (g *GameInstance) validateMove(c []Card) error {
-
+	// TODO: Check if cards exist in hand
 	// Check if first turn has a 3 of diamonds played
 	if g.turnNumber == 1 && !slices.Contains(c, NewCard(Three, Diamonds)) {
 		return errors.New("must have 3 of diamonds")
@@ -112,15 +130,41 @@ func (g *GameInstance) validateMove(c []Card) error {
 	if (len(c) != len(g.lastPlayed)) && (len(c) != 1 && GetRank(c[0]) != Two) {
 		return errors.New("invalid play")
 	}
-
+	// Compare high card
 	if len(c) == 1 && c[0] < g.lastPlayed[0] {
 		return errors.New("card smaller than last played")
+	}
+	// Compare poker hands
+	if len(c) > 1 {
+		ph, phr := getPokerHand(c)
+		phlp, phrlp := getPokerHand(g.lastPlayed)
+
+		if ph < phlp {
+			return errors.New("poker hand smaller than last played")
+		}
+
+		if ph == phrlp && phr < phrlp {
+			return errors.New("pokerhand rank smaller than last played")
+		}
 	}
 	return nil
 }
 
 func (g *GameInstance) disconnect(user string) {
 	delete(g.playerHands, user)
+}
+
+func (g *GameInstance) resetGameInstance() {
+	g.turnNumber = 0
+	g.numSkips = 0
+	g.gameStarted = false
+	shuffledDeck := shuffleDeck()
+	for i := range g.playerHands {
+		cards := dealCards(g.deck)
+		g.playerHands[i] = cards
+	}
+	g.deck = shuffledDeck
+	g.lastPlayed = nil
 }
 
 func (g *GameInstance) findThreeOfDiamonds() string {
@@ -139,37 +183,53 @@ type GameEvent struct {
 	UserId        string
 	TurnData
 	CardData
+	Players []string
 }
 
-func newConnectEvent(username string, roomId string, userId string) GameEvent {
-	return GameEvent{CONNECT, roomId, username, userId, TurnData{}, CardData{}}
+func newConnectEvent(username string, roomId string, userId string, players []string) GameEvent {
+	return GameEvent{CONNECT, roomId, username, userId, TurnData{}, CardData{}, players}
 }
 
-func newDisconnectEvent(username string, roomId string, userId string) GameEvent {
-	return GameEvent{DISCONNECT, roomId, username, userId, TurnData{}, CardData{}}
+func newDisconnectEvent(username string, roomId string, userId string, players []string) GameEvent {
+	return GameEvent{DISCONNECT, roomId, username, userId, TurnData{}, CardData{}, players}
 }
 
 // turn info
 type TurnData struct {
-	CurrentUserTurn string `json:currentturn,omitempty`
-	TurnNumber      int    `json:turnnumber`
+	CurrentUserTurn      string `json:currentturn,omitempty`
+	TurnNumber           int    `json:turnnumber`
+	Winner               string
+	CurrentUserTurnIndex int
 }
 
-func newSkipEvent(username string, userId string, roomId string, currUser string, turnNumber int, lastPlayedCards []Card) GameEvent {
-	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{lastPlayedCards}}
+type PlayerData struct {
+	Players []string
 }
 
-func newGameStartEvent(username string, userId string, roomId string, currUser string, turnNumber int) GameEvent {
-	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{}}
+func newSkipEvent(username string, userId string, roomId string, currUser string, turnNumber int, lastPlayedCards []Card, players []string, lastPlayedCardsString []string) GameEvent {
+	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{lastPlayedCards, lastPlayedCardsString}, players}
+}
+
+// TODO: currentturnuserindex
+func newGameStartEvent(username string, userId string, roomId string, currUser string, turnNumber int, players []string, hand []Card, handString []string, currUserTurnIndex int) GameEvent {
+	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currUserTurnIndex}, CardData{hand, handString}, players}
+}
+func newGameFinishEvent(username string, userId string, roomId string, turnNumber int, players []string, winner string) GameEvent {
+	return GameEvent{GAMEFINISH, roomId, username, userId, TurnData{TurnNumber: turnNumber, Winner: winner}, CardData{}, players}
+}
+
+func newUpdateHandEvent(username string, userId string, roomId string, cards []Card, players []string, cardsString []string) GameEvent {
+	return GameEvent{UPDATE_HAND, roomId, username, userId, TurnData{}, CardData{Cards: cards, CardString: cardsString}, players}
 }
 
 // card info
 type CardData struct {
-	Cards []Card `json:"cards"`
+	Cards      []Card
+	CardString []string
 }
 
-func newPlayEvent(username string, roomId string, currUser string, turnNumber int, cards []Card, userId string) GameEvent {
-	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{cards}}
+func newPlayEvent(username string, roomId string, currUser string, turnNumber int, cards []Card, userId string, players []string, cardsString []string) GameEvent {
+	return GameEvent{ACTION, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{cards, cardsString}, players}
 }
 
 type GameInstance struct {
@@ -205,9 +265,20 @@ func removeCardsFromHand(hand []Card, cards []Card) []Card {
 	return hand
 }
 
+func (a App) getUsernamesRoom(roomId string) []string {
+
+	var usernames []string
+	for _, j := range a.Hub.rooms[roomId] {
+		usernames = append(usernames, a.Hub.clients[j].name)
+	}
+	return usernames
+}
+
 const GAMESTART = "game_start"
 const CONNECT = "connect"
 const DISCONNECT = "disconnect"
-const MOVE = "move"
+const ACTION = "action"
 const SKIP = "skip"
 const ERROR = "error"
+const GAMEFINISH = "game_finish"
+const UPDATE_HAND = "update_hand"

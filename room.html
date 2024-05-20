@@ -1,3 +1,79 @@
 <html>
-   <h1>Welcome</h1>
+   <h1>Room ID: {{ .RoomID }}</h1>
+   <h2> Game status</h2>
+   <h2 id = "game_status"></h2>
+
+   <h2> Players:</h2>
+   <h3 id = "p0"></h3>
+   <h3 id = "p1"></h3>
+   <h3 id = "p2"></h3>
+   <h3 id = "p3"></h3>
+
+   <fieldset>
+      <legend>Hand:</legend>
+      <div id ="hand">
+
+      </div>
+   </fieldset>
+
+   <script>
+
+      const source = new EventSource("http://localhost:3333/events?room_id={{ .RoomID }}&uuid={{ .Uuid }}")
+      source.onmessage = (event) => {
+         let x = JSON.parse(event.data);
+         console.log("OnMessage Called:")
+         console.log(event)
+         console.log(JSON.parse(event.data))
+         // on every event, update elements
+         if (x['OperationType'] == "connect" || x['OperationType'] == "disconnect") {
+            // update player list
+            updatePlayersList(x['Players'])
+         } else if (x['OperationType'] == "game_start") {
+            // highlight current turn user
+            updatePlayersList(x['Players'])
+            highlightPlayer(x['Players'], x['CurrentUserTurnIndex'])
+            // update hand
+            updateHand(x['Cards'], x['CardString'])
+            // update turn count
+         } else if (x['OperationType'] == "skip") {
+            // update turn
+            // update log
+         } else if (x['OperationType'] == "action") {
+            // update last played
+            // update hand
+            // update log
+         }
+      }
+
+      function updateHand(hand, handString) {
+         let h = document.getElementById("hand");
+         while (h.firstChild) {
+            h.removeChild(h.firstChild);
+         }
+         for (i=0; i < hand.length; i++) {
+            let label = document.createElement("label");
+            let checkbox = document.createElement("input");
+            let textContent = document.createTextNode(handString[i]);
+            checkbox.type="checkbox";
+            checkbox.id="some-id";
+            checkbox.value=hand[i];
+            label.appendChild(checkbox);
+            label.appendChild(textContent);
+            h.appendChild(label)
+         }
+      }
+
+      function highlightPlayer(players, index) {
+         console.log(index)
+         let x = document.getElementById("p"+index);
+         x.style.color = "green";
+      }
+
+      function updatePlayersList(players) {
+         for (i = 0; i < players.length; i++) {
+            let x = document.getElementById("p"+i);
+            x.innerHTML = players[i];
+         }
+      }
+    </script>
 </html>

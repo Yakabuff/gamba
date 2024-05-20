@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"text/template"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,6 +16,7 @@ import (
 
 func main() {
 	app := newApp()
+	app.Redis = initRedis()
 	err := app.addSelfToServerList(app.NodeName)
 	if err != nil {
 		log.Panic(err)
@@ -39,9 +41,27 @@ func main() {
 
 func (e App) getJoinRoom(w http.ResponseWriter, r *http.Request) {
 	roomId := strings.Split(r.URL.Path, "/")[1]
-	// id, _ := r.Cookie("uuid")
+	id, _ := r.Cookie("uuid")
 	fmt.Println(e.Hub.rooms[roomId])
-	http.ServeFile(w, r, "room.html")
+	t, err := template.ParseFiles("room.html")
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(500)
+		return
+	}
+	data := struct {
+		RoomID string
+		Uuid   string
+	}{
+		RoomID: roomId,
+		Uuid:   id.Value,
+	}
+	err = t.Execute(w, data)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(500)
+		return
+	}
 }
 func (e App) postJoinRoom(w http.ResponseWriter, r *http.Request) {
 
@@ -72,7 +92,7 @@ func (e App) postJoinRoom(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(e.Hub.rooms[id])
 	fmt.Printf("adding client id %s to room %s", client.id, id)
 	e.Hub.clients[client.id] = client
-	connectEvent := newConnectEvent(client.name, id, client.id)
+	connectEvent := newConnectEvent(client.name, id, client.id, e.Hub.rooms[id])
 	e.Hub.roomChannels[id] <- connectEvent
 	cookie := http.Cookie{
 		Name:     "uuid",
@@ -115,11 +135,13 @@ func (e App) postCreateRoom(w http.ResponseWriter, r *http.Request) {
 	e.Hub.rooms[room.id] = append(e.Hub.rooms[room.id], client.id)
 	e.Hub.clients[client.id] = client
 
-	roomChannel := make(chan GameEvent)
+	roomChannel := make(chan GameEvent, 118)
 	e.Hub.roomChannels[room.id] = roomChannel
 	gi := newGameInstance()
 	e.GameInstances[room.id] = &gi
 	go e.spawnGameLoop(room.id)
+	connectEvent := newConnectEvent(client.name, room.id, client.id, nil)
+	e.Hub.roomChannels[room.id] <- connectEvent
 	cookie := http.Cookie{
 		Name:     "uuid",
 		Value:    client.id,
@@ -237,7 +259,7 @@ func (e App) postPlayCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := e.Hub.clients[uuid].name
-	playEvent := newPlayEvent(username, roomId, "", 0, cards, uuid)
+	playEvent := newPlayEvent(username, roomId, "", 0, cards, uuid, e.Hub.rooms[roomId], nil)
 	e.Hub.roomChannels[uuid] <- playEvent
 }
 
