@@ -50,11 +50,13 @@ func (e App) getJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := struct {
-		RoomID string
-		Uuid   string
+		RoomID   string
+		Uuid     string
+		Username string
 	}{
-		RoomID: roomId,
-		Uuid:   id.Value,
+		RoomID:   roomId,
+		Uuid:     id.Value,
+		Username: e.Hub.clients[id.Value].name,
 	}
 	err = t.Execute(w, data)
 	if err != nil {

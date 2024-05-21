@@ -1,5 +1,6 @@
 <html>
    <h1>Room ID: {{ .RoomID }}</h1>
+   <h1>Username: {{ .Username }}</h1>
    <h2> Game status</h2>
    <h2 id = "game_status"></h2>
 
@@ -8,6 +9,11 @@
    <h3 id = "p1"></h3>
    <h3 id = "p2"></h3>
    <h3 id = "p3"></h3>
+
+   <fieldset>
+      <legend>Last played:</legend>
+      <div id ="last_played"></div>
+   </fieldset>
 
    <fieldset>
       <legend>Hand:</legend>
@@ -31,13 +37,19 @@
          } else if (x['OperationType'] == "game_start") {
             // highlight current turn user
             updatePlayersList(x['Players'])
-            highlightPlayer(x['Players'], x['CurrentUserTurnIndex'])
+            highlightPlayer(x['CurrentUserTurnIndex'])
             // update hand
             updateHand(x['Cards'], x['CardString'])
             // update turn count
          } else if (x['OperationType'] == "skip") {
             // update turn
+            updatePlayersList(x['Players'])
+            highlightPlayer(x['CurrentUserTurnIndex'])
             // update log
+            // update last played
+            if (x['CardString']) {
+               updateLastPlayed(x['CardString'])
+            }
          } else if (x['OperationType'] == "action") {
             // update last played
             // update hand
@@ -63,8 +75,21 @@
          }
       }
 
-      function highlightPlayer(players, index) {
+      function updateLastPlayed(lastPlayed) {
+         let h = document.getElementById("last_played");
+         let lps = ""
+         for (i = 0; i < lastPlayed.length; i++) {
+            lps = lps + lastPlayed[i] + " "
+         }
+         h.innerHTML = lps
+      }
+
+      function highlightPlayer(index) {
          console.log(index)
+         document.getElementById("p0").style.color = ''
+         document.getElementById("p1").style.color = ''
+         document.getElementById("p2").style.color = ''
+         document.getElementById("p3").style.color = ''
          let x = document.getElementById("p"+index);
          x.style.color = "green";
       }

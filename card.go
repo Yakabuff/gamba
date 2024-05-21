@@ -258,12 +258,6 @@ func shuffleDeck() []Card {
 	return deck
 }
 
-func dealCards(deck []Card) []Card {
-	var x []Card
-	x, deck = deck[0:12], deck[1:]
-	return x
-}
-
 func cardsToString(cards []Card) []string {
 	var x []string
 	for _, j := range cards {
@@ -304,6 +298,8 @@ func cardsToString(cards []Card) []string {
 			r = "K"
 		} else if rank == Ace {
 			r = "A"
+		} else if rank == Two {
+			r = "2"
 		}
 		x = append(x, s+r)
 	}

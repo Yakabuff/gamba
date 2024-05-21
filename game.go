@@ -28,6 +28,7 @@ func (a App) spawnGameLoop(roomId string) {
 			// if 3 timeouts, play lowest card
 			currUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
 			currUserName := a.Hub.clients[currUserTurn].name
+			gameInstance.turnNumber = gameInstance.turnNumber + 1
 			if gameInstance.turnNumber == 1 {
 				user := gameInstance.findThreeOfDiamonds()
 				removeCardsFromHand(gameInstance.playerHands[user], []Card{NewCard(Three, Diamonds)})
@@ -44,7 +45,7 @@ func (a App) spawnGameLoop(roomId string) {
 			}
 			nextUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
 			cardsToString := cardsToString(gameInstance.lastPlayed)
-			skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber+1, gameInstance.lastPlayed, a.Hub.rooms[roomId], cardsToString)
+			skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber, gameInstance.lastPlayed, a.getUsernamesRoom(roomId), cardsToString, gameInstance.currentUserTurnIndex)
 			a.notifyRoomMembers(skipMessage)
 		case msg := <-channel:
 			fmt.Println(msg)
@@ -64,6 +65,7 @@ func (a App) spawnGameLoop(roomId string) {
 					gameInstance.gameStarted = true
 					currUserTurn := gameInstance.findThreeOfDiamonds()
 					currUserTurnName := a.Hub.clients[currUserTurn].name
+					gameInstance.currentUserTurnIndex = slices.Index(a.Hub.rooms[roomId], currUserTurn)
 					for _, j := range a.Hub.rooms[roomId] {
 						cardsToString := cardsToString(gameInstance.playerHands[j])
 						gameStartEvent := newGameStartEvent("", j, msg.RoomId, currUserTurnName, 1, usernames, gameInstance.playerHands[j], cardsToString, gameInstance.currentUserTurnIndex)
@@ -115,8 +117,7 @@ func (a App) spawnGameLoop(roomId string) {
 }
 
 func (g *GameInstance) connect(user string) {
-	cards := dealCards(g.deck)
-	g.playerHands[user] = cards
+	g.dealCards(user)
 	g.playerCount = g.playerCount + 1
 }
 
@@ -160,8 +161,7 @@ func (g *GameInstance) resetGameInstance() {
 	g.gameStarted = false
 	shuffledDeck := shuffleDeck()
 	for i := range g.playerHands {
-		cards := dealCards(g.deck)
-		g.playerHands[i] = cards
+		g.dealCards(i)
 	}
 	g.deck = shuffledDeck
 	g.lastPlayed = nil
@@ -206,11 +206,10 @@ type PlayerData struct {
 	Players []string
 }
 
-func newSkipEvent(username string, userId string, roomId string, currUser string, turnNumber int, lastPlayedCards []Card, players []string, lastPlayedCardsString []string) GameEvent {
-	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{lastPlayedCards, lastPlayedCardsString}, players}
+func newSkipEvent(username string, userId string, roomId string, currUser string, turnNumber int, lastPlayedCards []Card, players []string, lastPlayedCardsString []string, currentUserTurnIndex int) GameEvent {
+	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currentUserTurnIndex}, CardData{lastPlayedCards, lastPlayedCardsString}, players}
 }
 
-// TODO: currentturnuserindex
 func newGameStartEvent(username string, userId string, roomId string, currUser string, turnNumber int, players []string, hand []Card, handString []string, currUserTurnIndex int) GameEvent {
 	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currUserTurnIndex}, CardData{hand, handString}, players}
 }
@@ -272,6 +271,16 @@ func (a App) getUsernamesRoom(roomId string) []string {
 		usernames = append(usernames, a.Hub.clients[j].name)
 	}
 	return usernames
+}
+
+func (g *GameInstance) dealCards(user string) {
+	x := g.deck[0:12]
+	if len(g.deck) == 13 {
+		g.deck = []Card{}
+	} else {
+		g.deck = g.deck[13:]
+	}
+	g.playerHands[user] = x
 }
 
 const GAMESTART = "game_start"
