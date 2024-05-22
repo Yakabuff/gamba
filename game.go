@@ -14,7 +14,7 @@ func (a App) spawnGameLoop(roomId string) {
 	// Map {player1: [deck]}
 	channel := a.Hub.roomChannels[roomId]
 	for {
-		timeout := time.After(10 * time.Second)
+		timeout := time.After(1 * time.Second)
 		select {
 		case <-timeout:
 			if !gameInstance.gameStarted {
@@ -29,14 +29,27 @@ func (a App) spawnGameLoop(roomId string) {
 			currUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
 			currUserName := a.Hub.clients[currUserTurn].name
 			gameInstance.turnNumber = gameInstance.turnNumber + 1
+			gameInstance.numSkips = gameInstance.numSkips + 1
+			fmt.Printf("NUM SKIPS %d \n", gameInstance.numSkips)
 			if gameInstance.turnNumber == 1 {
 				user := gameInstance.findThreeOfDiamonds()
 				removeCardsFromHand(gameInstance.playerHands[user], []Card{NewCard(Three, Diamonds)})
 				gameInstance.lastPlayed = []Card{NewCard(Three, Diamonds)}
-			} else if gameInstance.numSkips == 3 {
+				//if auto played card, update hand
+				updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
+				a.notifyUser(updateHandEvent)
+				gameInstance.numSkips = 0
+			} else if gameInstance.numSkips == len(a.Hub.rooms[roomId]) {
+				fmt.Println("HERE!")
+				// p1 plays, p2 skips, p3 skips, p4 skips, p1 skips/times out -> automatically play lowest card in p1s hand
+				// 4 skips required
 				lowest := slices.Min(gameInstance.playerHands[currUserTurn])
 				removeCardsFromHand(gameInstance.playerHands[currUserTurn], []Card{lowest})
 				gameInstance.lastPlayed = []Card{lowest}
+				//if auto played card, update hand
+				updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
+				a.notifyUser(updateHandEvent)
+				gameInstance.numSkips = 0
 			}
 			if gameInstance.currentUserTurnIndex == 3 {
 				gameInstance.currentUserTurnIndex = 0
@@ -87,6 +100,7 @@ func (a App) spawnGameLoop(roomId string) {
 				fmt.Println("action")
 				removeCardsFromHand(gameInstance.playerHands[msg.UserId], msg.Cards)
 				gameInstance.lastPlayed = msg.Cards
+				gameInstance.numSkips = 0
 				a.notifyRoomMembers(msg)
 				cardsToString := cardsToString(gameInstance.playerHands[msg.UserId])
 				usernames := a.getUsernamesRoom(roomId)
@@ -100,7 +114,7 @@ func (a App) spawnGameLoop(roomId string) {
 			} else if gameInstance.gameStarted && msg.OperationType == SKIP {
 				// if skip, update last player
 				// numSkips == 3, we know everyone skipped; wipe last played
-				gameInstance.numSkips++
+				gameInstance.numSkips = gameInstance.numSkips + 1
 				if gameInstance.numSkips == 3 {
 					gameInstance.lastPlayed = gameInstance.lastPlayed[:0]
 				}
@@ -255,6 +269,7 @@ func (a App) getCurrentUserTurn(roomId string, userIndex int) string {
 
 // Remove cards from hand
 // Returns updated hand
+// TODO: Fix
 func removeCardsFromHand(hand []Card, cards []Card) []Card {
 	for _, j := range cards {
 		i := slices.Index(hand, j)

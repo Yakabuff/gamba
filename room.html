@@ -22,6 +22,12 @@
       </div>
    </fieldset>
 
+   <fieldset>
+      <legend>Activity:</legend>
+      <ul id ="activity">
+      </ul>
+   </fieldset>
+
    <script>
 
       const source = new EventSource("http://localhost:3333/events?room_id={{ .RoomID }}&uuid={{ .Uuid }}")
@@ -41,6 +47,8 @@
             // update hand
             updateHand(x['Cards'], x['CardString'])
             // update turn count
+         } else if (x['OperationType'] == "update_hand"){
+            updateHand(x['Cards'], x['CardString'])
          } else if (x['OperationType'] == "skip") {
             // update turn
             updatePlayersList(x['Players'])
@@ -55,6 +63,14 @@
             // update hand
             // update log
          }
+         updateLog(event.data)
+      }
+
+      function updateLog(msg) {
+         let h = document.getElementById("activity")
+         var li = document.createElement("li");
+         li.appendChild(document.createTextNode(msg));
+         h.appendChild(li);         
       }
 
       function updateHand(hand, handString) {
