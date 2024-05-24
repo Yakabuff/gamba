@@ -20,6 +20,7 @@
       <div id ="hand">
 
       </div>
+      <button type='button' id="sumbmit" onclick="playCards()">submit</button> 
    </fieldset>
 
    <fieldset>
@@ -29,7 +30,7 @@
    </fieldset>
 
    <script>
-
+      const button = document.getElementById('submit');
       const source = new EventSource("http://localhost:3333/events?room_id={{ .RoomID }}&uuid={{ .Uuid }}")
       source.onmessage = (event) => {
          let x = JSON.parse(event.data);
@@ -75,9 +76,7 @@
 
       function updateHand(hand, handString) {
          let h = document.getElementById("hand");
-         while (h.firstChild) {
-            h.removeChild(h.firstChild);
-         }
+         h.innerHTML = '';
          for (i=0; i < hand.length; i++) {
             let label = document.createElement("label");
             let checkbox = document.createElement("input");
@@ -114,6 +113,20 @@
          for (i = 0; i < players.length; i++) {
             let x = document.getElementById("p"+i);
             x.innerHTML = players[i];
+         }
+      }
+
+      async function playCards(){
+         try {     
+            const response = await fetch('/move', {
+               method: 'post',
+               body: {
+               // Your body
+               }
+            });
+            console.log('Completed!', response);
+         } catch(err) {
+            console.error(`Error: ${err}`);
          }
       }
     </script>

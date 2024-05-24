@@ -83,3 +83,17 @@ func TestGameStart(t *testing.T) {
 		t.Errorf("invalid %d", len(client1.events))
 	}
 }
+
+func TestGameRemoveHand(t *testing.T) {
+	gi := newGameInstance()
+	gi.playerHands["asdf"] = []Card{1, 2, 3}
+
+	gi.removeCardsFromHand([]Card{1}, "asdf")
+	if len(gi.playerHands["asdf"]) != 2 {
+		t.Errorf("invalid num cards %d", len(gi.playerHands["asdf"]))
+	}
+
+	if gi.playerHands["asdf"][0] != 3 && gi.playerHands["asdf"][1] != 2 {
+		t.Errorf("invalid cards in hand")
+	}
+}
