@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -42,7 +43,6 @@ func main() {
 func (e App) getJoinRoom(w http.ResponseWriter, r *http.Request) {
 	roomId := strings.Split(r.URL.Path, "/")[1]
 	id, _ := r.Cookie("uuid")
-	fmt.Println(e.Hub.rooms[roomId])
 	t, err := template.ParseFiles("room.html")
 	if err != nil {
 		log.Println(err)
@@ -91,10 +91,9 @@ func (e App) postJoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	client := newClient(name)
 	e.Hub.rooms[id] = append(e.Hub.rooms[id], client.id)
-	fmt.Println(e.Hub.rooms[id])
 	fmt.Printf("adding client id %s to room %s", client.id, id)
 	e.Hub.clients[client.id] = client
-	connectEvent := newConnectEvent(client.name, id, client.id, e.Hub.rooms[id])
+	connectEvent := newConnectEvent(client.name, id, client.id, e.Hub.rooms[id], nil)
 	e.Hub.roomChannels[id] <- connectEvent
 	cookie := http.Cookie{
 		Name:     "uuid",
@@ -142,7 +141,7 @@ func (e App) postCreateRoom(w http.ResponseWriter, r *http.Request) {
 	gi := newGameInstance()
 	e.GameInstances[room.id] = &gi
 	go e.spawnGameLoop(room.id)
-	connectEvent := newConnectEvent(client.name, room.id, client.id, nil)
+	connectEvent := newConnectEvent(client.name, room.id, client.id, nil, nil)
 	e.Hub.roomChannels[room.id] <- connectEvent
 	cookie := http.Cookie{
 		Name:     "uuid",
@@ -203,12 +202,9 @@ func (a App) roomStateSSE(w http.ResponseWriter, r *http.Request) {
 			// 	fmt.Println("timeout")
 			// 	fmt.Fprintf(w, ": nothing to sent\n\n")
 		}
-		fmt.Println("here")
 		if f, ok := w.(http.Flusher); ok {
-			fmt.Println("flushing")
 			f.Flush()
 		}
-		fmt.Println("finished flushing")
 	}
 }
 
@@ -229,17 +225,22 @@ type GameState struct {
 // Check if valid move
 // If valid move, send to game instance
 func (e App) postPlayCards(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(r.Body)
 	decoder := json.NewDecoder(r.Body)
 	data := &playCardRequest{}
 	err := decoder.Decode(&data)
 	if err != nil {
+		fmt.Println("decode failure")
+		fmt.Println(err)
 		w.WriteHeader(400)
 		return
 	}
-	uuid := data.uuid
-	roomId := data.roomId
-	cards := data.play
+	fmt.Println(data)
+	uuid := data.Uuid
+	roomId := data.RoomId
+	cards := data.Play
 	if uuid == "" || roomId == "" || len(cards) == 0 {
+		fmt.Println("missing field")
 		w.WriteHeader(400)
 		return
 	}
@@ -255,18 +256,29 @@ func (e App) postPlayCards(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	game := e.GameInstances[roomId]
-	err = game.validateMove(cards)
+	s := make([]Card, len(cards))
+	for i, v := range cards {
+		res, err := strconv.ParseUint(v.String(), 10, 64)
+		if err != nil {
+			w.WriteHeader(400)
+			return
+		}
+		s[i] = uint(res)
+	}
+	err = game.validateMove(s)
 	if err != nil {
+		fmt.Println(err)
 		w.WriteHeader(400)
 		return
 	}
 	username := e.Hub.clients[uuid].name
-	playEvent := newPlayEvent(username, roomId, "", 0, cards, uuid, e.Hub.rooms[roomId], nil)
-	e.Hub.roomChannels[uuid] <- playEvent
+	playEvent := newPlayEvent(username, roomId, "", 0, s, uuid, e.Hub.rooms[roomId], nil)
+	e.Hub.roomChannels[roomId] <- playEvent
+	w.WriteHeader(200)
 }
 
 type playCardRequest struct {
-	uuid   string
-	roomId string
-	play   []Card
+	Uuid   string
+	RoomId string
+	Play   []json.Number `json:"Play,string"`
 }

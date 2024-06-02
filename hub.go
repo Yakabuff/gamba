@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
@@ -70,13 +68,9 @@ type Room struct {
 
 func (e App) notifyRoomMembers(g GameEvent) {
 	members := e.Hub.rooms[g.RoomId]
-	fmt.Println(members)
 	for _, j := range members {
-		fmt.Println("Notifying" + j)
 		client := e.Hub.clients[j]
-		fmt.Println(client.name)
 		client.events <- g
-		fmt.Println("finished notifying" + j)
 	}
 }
 

@@ -4,11 +4,19 @@
    <h2> Game status</h2>
    <h2 id = "game_status"></h2>
 
+   <h2>Round Number:</h2>
+   <h2 id = "round_number">0</h2>
+
    <h2> Players:</h2>
    <h3 id = "p0"></h3>
    <h3 id = "p1"></h3>
    <h3 id = "p2"></h3>
    <h3 id = "p3"></h3>
+
+   <fieldset>
+      <legend>Leaderboard:</legend>
+      <div id ="leaderboard"></div>
+   </fieldset>
 
    <fieldset>
       <legend>Last played:</legend>
@@ -20,7 +28,7 @@
       <div id ="hand">
 
       </div>
-      <button type='button' id="sumbmit" onclick="playCards()">submit</button> 
+      <button type='button' id="submit" onclick="playCards()">submit</button> 
    </fieldset>
 
    <fieldset>
@@ -31,7 +39,10 @@
 
    <script>
       const button = document.getElementById('submit');
-      const source = new EventSource("http://localhost:3333/events?room_id={{ .RoomID }}&uuid={{ .Uuid }}")
+      const source = new EventSource("/events?room_id={{ .RoomID }}&uuid={{ .Uuid }}")
+      source.onerror = function() {
+         sse.close();
+      };
       source.onmessage = (event) => {
          let x = JSON.parse(event.data);
          console.log("OnMessage Called:")
@@ -41,6 +52,7 @@
          if (x['OperationType'] == "connect" || x['OperationType'] == "disconnect") {
             // update player list
             updatePlayersList(x['Players'])
+            updateLeaderboard(x['Leaderboard'])
          } else if (x['OperationType'] == "game_start") {
             // highlight current turn user
             updatePlayersList(x['Players'])
@@ -48,9 +60,11 @@
             // update hand
             updateHand(x['Cards'], x['CardString'])
             // update turn count
+         } else if (x['OperationType'] == "game_finish") {
+            updateLeaderboard(x['Leaderboard'])
          } else if (x['OperationType'] == "update_hand"){
             updateHand(x['Cards'], x['CardString'])
-         } else if (x['OperationType'] == "skip") {
+         } else if (x['OperationType'] == "skip" || x['OperationType'] == "action") {
             // update turn
             updatePlayersList(x['Players'])
             highlightPlayer(x['CurrentUserTurnIndex'])
@@ -59,10 +73,6 @@
             if (x['CardString']) {
                updateLastPlayed(x['CardString'])
             }
-         } else if (x['OperationType'] == "action") {
-            // update last played
-            // update hand
-            // update log
          }
          updateLog(event.data)
       }
@@ -82,7 +92,7 @@
             let checkbox = document.createElement("input");
             let textContent = document.createTextNode(handString[i]);
             checkbox.type="checkbox";
-            checkbox.id="some-id";
+            checkbox.name="handcheckbox";
             checkbox.value=hand[i];
             label.appendChild(checkbox);
             label.appendChild(textContent);
@@ -116,13 +126,41 @@
          }
       }
 
+      function updateLeaderboard(players) {
+         let x = document.getElementById("leaderboard");
+         x.innerHTML = ""
+         let tbl = document.createElement("table");
+         var tbdy = document.createElement('tbody');
+         for (const prop in players) {
+            var tr = document.createElement('tr');
+            var td1 = document.createElement('td');
+            var td2 = document.createElement('td');
+            td1.appendChild(document.createTextNode(prop))
+            td2.appendChild(document.createTextNode(players[prop]));
+            tr.appendChild(td1);
+            tr.appendChild(td2);
+            tbdy.appendChild(tr);
+         }
+         tbl.appendChild(tbdy)
+         x.appendChild(tbl)
+      }
+
       async function playCards(){
+         let checkboxes = document.getElementsByName("handcheckbox");
+         var checked = [];
+         for (var i=0; i<checkboxes.length; i++) {
+            if (checkboxes[i].checked) {
+               checked.push(checkboxes[i].value);
+            }
+         }
          try {     
             const response = await fetch('/move', {
                method: 'post',
-               body: {
-               // Your body
-               }
+               body: JSON.stringify({
+                  "Uuid": "{{ .Uuid }}",
+                  "RoomId": "{{ .RoomID }}",
+                  "Play": checked
+               })
             });
             console.log('Completed!', response);
          } catch(err) {

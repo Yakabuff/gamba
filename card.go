@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 	"slices"
 )
@@ -71,8 +70,6 @@ func NewCard(r Rank, s Suite) Card {
 func GetSuite(c Card) Suite {
 	// bitmask first 4 bits of uint to get LSBs (suite)
 	suite := c & 15
-	fmt.Println(c)
-	fmt.Printf("suite %d\n", suite)
 	if suite == Diamonds || suite == Hearts || suite == Spades || suite == Clubs {
 		return suite
 	}
@@ -199,7 +196,6 @@ func isFlush(c []Card) bool {
 func isStraight(c []Card) bool {
 	var straight uint
 	for i, card := range c {
-		fmt.Println(card)
 		if i == 0 {
 			straight = card
 		} else {
@@ -207,9 +203,7 @@ func isStraight(c []Card) bool {
 		}
 	}
 
-	fmt.Println(straight)
 	straight = straight >> 8
-	fmt.Println(straight)
 	switch straight {
 	case ThreeStraight, FourStraight, FiveStraight, SixStraight, SevenStraight, EightStraight, NineStraight, TenStraight, TwoStraight, AceStraight:
 		return true

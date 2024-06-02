@@ -14,118 +14,155 @@ func (a App) spawnGameLoop(roomId string) {
 	// Map {player1: [deck]}
 	channel := a.Hub.roomChannels[roomId]
 	for {
-		timeout := time.After(1 * time.Second)
-		select {
-		case <-timeout:
-			if !gameInstance.gameStarted {
-				continue
-			}
-			log.Println("timeout!")
-			// timeout: skip current user's turn
-			// increment round num
-			// notify next user that it's their turn
-			// if turn 1, must not pass; if user doesn't play card, play 3 of diamonds for them
-			// if 3 timeouts, play lowest card
-			currUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
-			currUserName := a.Hub.clients[currUserTurn].name
-			gameInstance.turnNumber = gameInstance.turnNumber + 1
-			gameInstance.numSkips = gameInstance.numSkips + 1
-			fmt.Printf("NUM SKIPS %d \n", gameInstance.numSkips)
-			if gameInstance.turnNumber == 1 {
-				user := gameInstance.findThreeOfDiamonds()
-				gameInstance.removeCardsFromHand([]Card{NewCard(Three, Diamonds)}, user)
-				gameInstance.lastPlayed = []Card{NewCard(Three, Diamonds)}
-				//if auto played card, update hand
-				updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
-				a.notifyUser(updateHandEvent)
-				gameInstance.numSkips = 0
-			} else if gameInstance.numSkips == len(a.Hub.rooms[roomId]) {
-				fmt.Println("HERE!")
-				// p1 plays, p2 skips, p3 skips, p4 skips, p1 skips/times out -> automatically play lowest card in p1s hand
-				// 4 skips required
-				lowest := slices.Min(gameInstance.playerHands[currUserTurn])
-				gameInstance.removeCardsFromHand([]Card{lowest}, currUserTurn)
-				gameInstance.lastPlayed = []Card{lowest}
-				//if auto played card, update hand
-				updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
-				a.notifyUser(updateHandEvent)
-				gameInstance.numSkips = 0
-				// if player has no more cards notify win
-			}
-			if gameInstance.currentUserTurnIndex == 3 {
-				gameInstance.currentUserTurnIndex = 0
-			} else {
-				gameInstance.currentUserTurnIndex++
-			}
-			nextUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
-			cardsToString := cardsToString(gameInstance.lastPlayed)
-			skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber, gameInstance.lastPlayed, a.getUsernamesRoom(roomId), cardsToString, gameInstance.currentUserTurnIndex)
-			a.notifyRoomMembers(skipMessage)
-		case msg := <-channel:
-			fmt.Println(msg)
-			if !gameInstance.gameStarted && msg.OperationType == CONNECT {
-				// connect: if player count < 4, notify room
-				// if player count == 4, emit game start message
-				// set game instance status to game started and current user's turn
-				// current user is user with 3 of diamonds
-				// notify room who's starting
-				fmt.Println("connect")
-				gameInstance.connect(msg.UserId)
-				usernames := a.getUsernamesRoom(roomId)
-				gameConnectEvent := newConnectEvent(msg.Username, roomId, "", usernames)
-				a.notifyRoomMembers(gameConnectEvent)
-				log.Println(gameInstance.playerCount)
-				if gameInstance.playerCount == 4 {
-					gameInstance.gameStarted = true
-					currUserTurn := gameInstance.findThreeOfDiamonds()
-					currUserTurnName := a.Hub.clients[currUserTurn].name
-					gameInstance.currentUserTurnIndex = slices.Index(a.Hub.rooms[roomId], currUserTurn)
-					for _, j := range a.Hub.rooms[roomId] {
-						cardsToString := cardsToString(gameInstance.playerHands[j])
-						gameStartEvent := newGameStartEvent("", j, msg.RoomId, currUserTurnName, 1, usernames, gameInstance.playerHands[j], cardsToString, gameInstance.currentUserTurnIndex)
-						a.notifyUser(gameStartEvent)
-					}
+		gameInstance.roundNumber++
+		for {
+			timeout := time.After(1 * time.Second)
+			select {
+			case <-timeout:
+				if !gameInstance.gameStarted {
+					continue
 				}
-
-			} else if msg.OperationType == DISCONNECT {
-				// disconnect: remove user from game and server
-				// notify room
-				// Note: doesnt matter if user disconnects mid turn, let it timeout
-				fmt.Println("disconnect")
-				gameInstance.disconnect(msg.UserId)
-				a.disconnectRoomMember(msg)
-				usernames := a.getUsernamesRoom(roomId)
-				disconnectEvent := newDisconnectEvent(msg.Username, msg.RoomId, "", usernames)
-				a.notifyRoomMembers(disconnectEvent)
-			} else if gameInstance.gameStarted && msg.OperationType == ACTION {
-				fmt.Println("action")
-				gameInstance.removeCardsFromHand(msg.Cards, msg.UserId)
-				gameInstance.lastPlayed = msg.Cards
-				gameInstance.numSkips = 0
-				a.notifyRoomMembers(msg)
-				cardsToString := cardsToString(gameInstance.playerHands[msg.UserId])
-				usernames := a.getUsernamesRoom(roomId)
-				updateHandEvent := newUpdateHandEvent(msg.Username, msg.UserId, roomId, gameInstance.playerHands[msg.UserId], usernames, cardsToString)
-				a.notifyUser(updateHandEvent)
-				if len(gameInstance.playerHands[msg.UserId]) == 0 {
-					gameFinishEvent := newGameFinishEvent(msg.Username, "", roomId, gameInstance.turnNumber, a.Hub.rooms[roomId], msg.Username)
-					a.notifyRoomMembers(gameFinishEvent)
-					gameInstance.resetGameInstance()
-				}
-			} else if gameInstance.gameStarted && msg.OperationType == SKIP {
-				// if skip, update last player
-				// numSkips == 3, we know everyone skipped; wipe last played
+				log.Println("timeout!")
+				// timeout: skip current user's turn
+				// increment round num
+				// notify next user that it's their turn
+				// if turn 1, must not pass; if user doesn't play card, play 3 of diamonds for them
+				// if 3 timeouts, play lowest card
+				currUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
+				currUserName := a.Hub.clients[currUserTurn].name
+				gameInstance.turnNumber = gameInstance.turnNumber + 1
 				gameInstance.numSkips = gameInstance.numSkips + 1
-				if gameInstance.numSkips == 3 {
-					gameInstance.lastPlayed = gameInstance.lastPlayed[:0]
+				fmt.Printf("NUM SKIPS %d \n", gameInstance.numSkips)
+				if gameInstance.turnNumber == 1 {
+					user := gameInstance.findThreeOfDiamonds()
+					gameInstance.removeCardsFromHand([]Card{NewCard(Three, Diamonds)}, user)
+					gameInstance.lastPlayed = []Card{NewCard(Three, Diamonds)}
+					//if auto played card, update hand
+					updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
+					a.notifyUser(updateHandEvent)
+					gameInstance.numSkips = 0
+				} else if gameInstance.numSkips == len(a.Hub.rooms[roomId]) {
+					// p1 plays, p2 skips, p3 skips, p4 skips, p1 skips/times out -> automatically play lowest card in p1s hand
+					// 4 skips required
+					lowest := slices.Min(gameInstance.playerHands[currUserTurn])
+					gameInstance.removeCardsFromHand([]Card{lowest}, currUserTurn)
+					gameInstance.lastPlayed = []Card{lowest}
+					//if auto played card, update hand
+					updateHandEvent := newUpdateHandEvent(a.Hub.clients[currUserTurn].name, currUserTurn, roomId, gameInstance.playerHands[currUserTurn], a.getUsernamesRoom(roomId), cardsToString(gameInstance.playerHands[currUserTurn]))
+					a.notifyUser(updateHandEvent)
+					gameInstance.numSkips = 0
+					// if player has no more cards notify win
+					if len(gameInstance.playerHands[currUserTurn]) == 0 {
+						// Update leaderboard
+						_, ok := gameInstance.leaderBoard[currUserName]
+						if ok {
+							gameInstance.leaderBoard[currUserName] = gameInstance.leaderBoard[currUserName] + 1
+						} else {
+							gameInstance.leaderBoard[currUserName] = 1
+						}
+						gameFinishEvent := newGameFinishEvent(currUserName, "", roomId, gameInstance.turnNumber, a.getUsernamesRoom(roomId), gameInstance.leaderBoard)
+						a.notifyRoomMembers(gameFinishEvent)
+						time.Sleep(5 * time.Second)
+						gameInstance.resetGameInstance()
+						gameInstance.gameStarted = true
+						currUserTurn := gameInstance.findThreeOfDiamonds()
+						currUserTurnName := a.Hub.clients[currUserTurn].name
+						gameInstance.currentUserTurnIndex = slices.Index(a.Hub.rooms[roomId], currUserTurn)
+						for _, j := range a.Hub.rooms[roomId] {
+							cardsToString := cardsToString(gameInstance.playerHands[j])
+							usernames := a.getUsernamesRoom(roomId)
+							gameStartEvent := newGameStartEvent("", j, roomId, currUserTurnName, 1, usernames, gameInstance.playerHands[j], cardsToString, gameInstance.currentUserTurnIndex, gameInstance.leaderBoard)
+							a.notifyUser(gameStartEvent)
+						}
+						break
+					}
 				}
 				if gameInstance.currentUserTurnIndex == 3 {
 					gameInstance.currentUserTurnIndex = 0
 				} else {
 					gameInstance.currentUserTurnIndex++
 				}
-			} else {
-				log.Println("invalid operation")
+				nextUserTurn := a.getCurrentUserTurn(roomId, gameInstance.currentUserTurnIndex)
+				cardsToString := cardsToString(gameInstance.lastPlayed)
+				skipMessage := newSkipEvent(currUserName, "", roomId, nextUserTurn, gameInstance.turnNumber, gameInstance.lastPlayed, a.getUsernamesRoom(roomId), cardsToString, gameInstance.currentUserTurnIndex)
+				a.notifyRoomMembers(skipMessage)
+			case msg := <-channel:
+				fmt.Println(msg)
+				if !gameInstance.gameStarted && msg.OperationType == CONNECT {
+					// connect: if player count < 4, notify room
+					// if player count == 4, emit game start message
+					// set game instance status to game started and current user's turn
+					// current user is user with 3 of diamonds
+					// notify room who's starting
+					gameInstance.connect(msg.UserId)
+					gameInstance.leaderBoard[msg.Username] = 0
+					usernames := a.getUsernamesRoom(roomId)
+					gameConnectEvent := newConnectEvent(msg.Username, roomId, "", usernames, gameInstance.leaderBoard)
+					a.notifyRoomMembers(gameConnectEvent)
+					log.Println(gameInstance.playerCount)
+					if gameInstance.playerCount == 4 {
+						gameInstance.gameStarted = true
+						currUserTurn := gameInstance.findThreeOfDiamonds()
+						currUserTurnName := a.Hub.clients[currUserTurn].name
+						gameInstance.currentUserTurnIndex = slices.Index(a.Hub.rooms[roomId], currUserTurn)
+						for _, j := range a.Hub.rooms[roomId] {
+							cardsToString := cardsToString(gameInstance.playerHands[j])
+							gameStartEvent := newGameStartEvent("", j, msg.RoomId, currUserTurnName, 1, usernames, gameInstance.playerHands[j], cardsToString, gameInstance.currentUserTurnIndex, gameInstance.leaderBoard)
+							a.notifyUser(gameStartEvent)
+						}
+					}
+
+				} else if msg.OperationType == DISCONNECT {
+					// disconnect: remove user from game and server
+					// notify room
+					// Note: doesnt matter if user disconnects mid turn, let it timeout
+					gameInstance.disconnect(msg.UserId)
+					a.disconnectRoomMember(msg)
+					usernames := a.getUsernamesRoom(roomId)
+					disconnectEvent := newDisconnectEvent(msg.Username, msg.RoomId, "", usernames)
+					a.notifyRoomMembers(disconnectEvent)
+				} else if gameInstance.gameStarted && msg.OperationType == ACTION {
+					// update hand of player
+					// notify all players of action
+					gameInstance.removeCardsFromHand(msg.Cards, msg.UserId)
+					gameInstance.lastPlayed = msg.Cards
+					gameInstance.numSkips = 0
+					gameInstance.turnNumber++
+					// find next user
+					if gameInstance.currentUserTurnIndex == 3 {
+						gameInstance.currentUserTurnIndex = 0
+					} else {
+						gameInstance.currentUserTurnIndex++
+					}
+					currUser := a.Hub.rooms[roomId][gameInstance.currentUserTurnIndex]
+					actionEvent := newPlayEvent(msg.Username, roomId, currUser, gameInstance.turnNumber, msg.Cards, "", a.getUsernamesRoom(roomId), cardsToString(msg.Cards))
+					a.notifyRoomMembers(actionEvent)
+					cardsHandString := cardsToString(gameInstance.playerHands[msg.UserId])
+					usernames := a.getUsernamesRoom(roomId)
+					updateHandEvent := newUpdateHandEvent(msg.Username, msg.UserId, roomId, gameInstance.playerHands[msg.UserId], usernames, cardsHandString)
+					a.notifyUser(updateHandEvent)
+					if len(gameInstance.playerHands[msg.UserId]) == 0 {
+						gameFinishEvent := newGameFinishEvent(msg.Username, "", roomId, gameInstance.turnNumber, a.Hub.rooms[roomId], gameInstance.leaderBoard)
+						a.notifyRoomMembers(gameFinishEvent)
+						gameInstance.resetGameInstance()
+						break
+					}
+					continue
+				} else if gameInstance.gameStarted && msg.OperationType == SKIP {
+					// if skip, update last player
+					// numSkips == 3, we know everyone skipped; wipe last played
+					gameInstance.numSkips = gameInstance.numSkips + 1
+					if gameInstance.numSkips == 3 {
+						gameInstance.lastPlayed = gameInstance.lastPlayed[:0]
+					}
+					if gameInstance.currentUserTurnIndex == 3 {
+						gameInstance.currentUserTurnIndex = 0
+					} else {
+						gameInstance.currentUserTurnIndex++
+					}
+				} else {
+					log.Println("invalid operation")
+				}
 			}
 		}
 	}
@@ -141,6 +178,9 @@ func (g *GameInstance) validateMove(c []Card) error {
 	// Check if first turn has a 3 of diamonds played
 	if g.turnNumber == 1 && !slices.Contains(c, NewCard(Three, Diamonds)) {
 		return errors.New("must have 3 of diamonds")
+	}
+	if len(g.lastPlayed) == 0 {
+		return nil
 	}
 	// Check if valid number of cards eg: should not play full house on a single 3
 	if (len(c) != len(g.lastPlayed)) && (len(c) != 1 && GetRank(c[0]) != Two) {
@@ -175,10 +215,10 @@ func (g *GameInstance) resetGameInstance() {
 	g.numSkips = 0
 	g.gameStarted = false
 	shuffledDeck := shuffleDeck()
+	g.deck = shuffledDeck
 	for i := range g.playerHands {
 		g.dealCards(i)
 	}
-	g.deck = shuffledDeck
 	g.lastPlayed = nil
 }
 
@@ -198,22 +238,22 @@ type GameEvent struct {
 	UserId        string
 	TurnData
 	CardData
-	Players []string
+	Players     []string
+	Leaderboard map[string]int
 }
 
-func newConnectEvent(username string, roomId string, userId string, players []string) GameEvent {
-	return GameEvent{CONNECT, roomId, username, userId, TurnData{}, CardData{}, players}
+func newConnectEvent(username string, roomId string, userId string, players []string, leaderboard map[string]int) GameEvent {
+	return GameEvent{CONNECT, roomId, username, userId, TurnData{}, CardData{}, players, leaderboard}
 }
 
 func newDisconnectEvent(username string, roomId string, userId string, players []string) GameEvent {
-	return GameEvent{DISCONNECT, roomId, username, userId, TurnData{}, CardData{}, players}
+	return GameEvent{DISCONNECT, roomId, username, userId, TurnData{}, CardData{}, players, nil}
 }
 
 // turn info
 type TurnData struct {
 	CurrentUserTurn      string `json:currentturn,omitempty`
 	TurnNumber           int    `json:turnnumber`
-	Winner               string
 	CurrentUserTurnIndex int
 }
 
@@ -222,18 +262,18 @@ type PlayerData struct {
 }
 
 func newSkipEvent(username string, userId string, roomId string, currUser string, turnNumber int, lastPlayedCards []Card, players []string, lastPlayedCardsString []string, currentUserTurnIndex int) GameEvent {
-	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currentUserTurnIndex}, CardData{lastPlayedCards, lastPlayedCardsString}, players}
+	return GameEvent{SKIP, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currentUserTurnIndex}, CardData{lastPlayedCards, lastPlayedCardsString}, players, nil}
 }
 
-func newGameStartEvent(username string, userId string, roomId string, currUser string, turnNumber int, players []string, hand []Card, handString []string, currUserTurnIndex int) GameEvent {
-	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currUserTurnIndex}, CardData{hand, handString}, players}
+func newGameStartEvent(username string, userId string, roomId string, currUser string, turnNumber int, players []string, hand []Card, handString []string, currUserTurnIndex int, leaderboard map[string]int) GameEvent {
+	return GameEvent{GAMESTART, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber, CurrentUserTurnIndex: currUserTurnIndex}, CardData{hand, handString}, players, leaderboard}
 }
-func newGameFinishEvent(username string, userId string, roomId string, turnNumber int, players []string, winner string) GameEvent {
-	return GameEvent{GAMEFINISH, roomId, username, userId, TurnData{TurnNumber: turnNumber, Winner: winner}, CardData{}, players}
+func newGameFinishEvent(username string, userId string, roomId string, turnNumber int, players []string, leaderboard map[string]int) GameEvent {
+	return GameEvent{GAMEFINISH, roomId, username, userId, TurnData{TurnNumber: turnNumber}, CardData{}, players, leaderboard}
 }
 
 func newUpdateHandEvent(username string, userId string, roomId string, cards []Card, players []string, cardsString []string) GameEvent {
-	return GameEvent{UPDATE_HAND, roomId, username, userId, TurnData{}, CardData{Cards: cards, CardString: cardsString}, players}
+	return GameEvent{UPDATE_HAND, roomId, username, userId, TurnData{}, CardData{Cards: cards, CardString: cardsString}, players, nil}
 }
 
 // card info
@@ -243,7 +283,7 @@ type CardData struct {
 }
 
 func newPlayEvent(username string, roomId string, currUser string, turnNumber int, cards []Card, userId string, players []string, cardsString []string) GameEvent {
-	return GameEvent{ACTION, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{cards, cardsString}, players}
+	return GameEvent{ACTION, roomId, username, userId, TurnData{CurrentUserTurn: currUser, TurnNumber: turnNumber}, CardData{cards, cardsString}, players, nil}
 }
 
 type GameInstance struct {
@@ -255,12 +295,15 @@ type GameInstance struct {
 	currentUserTurnIndex int
 	turnNumber           int
 	numSkips             int
+	roundNumber          int
+	leaderBoard          map[string]int
 }
 
 func newGameInstance() GameInstance {
 	shuffledDeck := shuffleDeck()
 	playerHands := make(map[string][]Card)
-	return GameInstance{nil, playerHands, shuffledDeck, 0, false, 0, 0, 0}
+	leaderBoard := make(map[string]int)
+	return GameInstance{nil, playerHands, shuffledDeck, 0, false, 0, 0, 0, 0, leaderBoard}
 }
 
 func (a App) getCurrentUserTurn(roomId string, userIndex int) string {
